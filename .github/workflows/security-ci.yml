@@ -1,0 +1,56 @@
+name: Security CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  security-ci:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies (app + security tools)
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          pip install safety bandit pytest
+
+      - name: Run unit tests
+        run: |
+          pytest -q
+        # tests should fail the job if they fail
+        continue-on-error: false
+
+      # ---- Security Scans (allowed to fail without stopping the workflow) ----
+      - name: Safety (dependency vulnerability scan)
+        run: |
+          # Exit code >0 when vulns found; allow workflow to continue for visibility
+          safety check -r requirements.txt --full-report || true
+        continue-on-error: true
+
+        # Optional: save a machine-readable report (uncomment if you want artifacts)
+        # run: |
+        #   safety check -r requirements.txt --json > safety-report.json || true
+
+      - name: Bandit (code security scan)
+        run: |
+          # Recursively scan repo; exclude common virtualenv/cache dirs
+          bandit -r . -x venv,.venv,__pycache__
+        continue-on-error: true
+
+      # Optional: upload reports as artifacts (uncomment if you saved files above)
+      # - name: Upload security reports
+      #   if: always()
+      #   uses: actions/upload-artifact@v4
+      #   with:
+      #     name: security-reports
+      #     path: |
+      #       safety-report.json
